@@ -1,0 +1,179 @@
+import "dotenv/config";
+import { contentService } from "./contentService.js";
+import { wordpressService } from "./wordpressService.js";
+
+// ── Configuration ────────────────────────────────────────────────────────────
+
+const BASE_URL = process.env.WP_BASE_URL || "http://localhost/wordpress";
+const USERNAME = process.env.WP_USERNAME;
+const PASSWORD = process.env.WP_PASSWORD;
+
+const VALID_STATUSES = ["draft", "publish", "pending", "private", "future"];
+
+// ── CLI argument parsing ──────────────────────────────────────────────────────
+
+function parseArgs(argv) {
+  const args = argv.slice(2);
+  const result = { count: 1, status: "draft" };
+  const errors = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === "--count" || arg === "-c") {
+      const raw = args[++i];
+      const value = Number(raw);
+
+      if (!raw || !Number.isInteger(value)) {
+        errors.push(`--count requires an integer value (got: ${raw ?? "nothing"})`);
+      } else if (value < 1 || value > 100) {
+        errors.push(`--count must be between 1 and 100 (got: ${value})`);
+      } else {
+        result.count = value;
+      }
+
+    } else if (arg === "--status" || arg === "-s") {
+      const raw = args[++i];
+
+      if (!raw) {
+        errors.push("--status requires a value");
+      } else if (!VALID_STATUSES.includes(raw)) {
+        errors.push(
+          `--status must be one of: ${VALID_STATUSES.join(", ")} (got: "${raw}")`
+        );
+      } else {
+        result.status = raw;
+      }
+
+    } else if (arg === "--help" || arg === "-h") {
+      printHelp();
+      process.exit(0);
+
+    } else {
+      errors.push(`Unknown argument: ${arg}`);
+    }
+  }
+
+  if (errors.length) {
+    errors.forEach((e) => console.error(`  ✖ ${e}`));
+    console.error('\nRun with --help for usage information.');
+    process.exit(1);
+  }
+
+  return result;
+}
+
+function printHelp() {
+  console.log(`
+WordPress Auto-Poster
+
+Usage:
+  node index.js [options]
+
+Options:
+  -c, --count <n>     Number of posts to create (1–100, default: 1)
+  -s, --status <s>    Post status (default: draft)
+                      Allowed: ${VALID_STATUSES.join(", ")}
+  -h, --help          Show this help message
+
+Examples:
+  node index.js                        # create 1 draft post
+  node index.js --count 5              # create 5 draft posts
+  node index.js --count 3 --status publish
+  node index.js -c 10 -s pending
+`);
+}
+
+// ── Validation ────────────────────────────────────────────────────────────────
+
+function validateConfig() {
+  const missing = [];
+  if (!USERNAME) missing.push("WP_USERNAME");
+  if (!PASSWORD) missing.push("WP_PASSWORD");
+
+  if (missing.length) {
+    throw new Error(
+      `Missing required environment variable(s): ${missing.join(", ")}\n` +
+        `Copy .env.example to .env and fill in the values.`
+    );
+  }
+}
+
+// ── Single post flow ──────────────────────────────────────────────────────────
+
+async function createOnePost({ status, index, total }) {
+  const label = total > 1 ? ` [${index}/${total}]` : "";
+
+  console.log(`\n📝  Generating content and fetching image…${label}`);
+  const [{ title, content }, { buffer: imageBuffer, contentType }] =
+    await Promise.all([contentService.fetchContent(), contentService.fetchImage()]);
+
+  console.log(`   Title   : ${title}`);
+  console.log(`   Content : ${content.length} characters`);
+
+  console.log(`🖼   Uploading featured image…`);
+  const featuredMediaId = await wordpressService.uploadMedia({
+    baseUrl: BASE_URL,
+    username: USERNAME,
+    password: PASSWORD,
+    imageBuffer,
+    contentType,
+    filename: `featured-${Date.now()}.jpg`,
+  });
+
+  console.log(`📄  Creating post (status: ${status})…`);
+  const post = await wordpressService.createPost({
+    baseUrl: BASE_URL,
+    username: USERNAME,
+    password: PASSWORD,
+    title,
+    content,
+    status,
+    featuredMediaId,
+  });
+
+  return { post, title, featuredMediaId };
+}
+
+// ── Main flow ─────────────────────────────────────────────────────────────────
+
+async function run() {
+  const { count, status } = parseArgs(process.argv);
+
+  validateConfig();
+
+  console.log(`\n🚀  WordPress Auto-Poster`);
+  console.log(`   Target  : ${BASE_URL}`);
+  console.log(`   Posts   : ${count}`);
+  console.log(`   Status  : ${status}`);
+
+  const results = [];
+
+  for (let i = 1; i <= count; i++) {
+    const { post, title, featuredMediaId } = await createOnePost({
+      status,
+      index: i,
+      total: count,
+    });
+    results.push({ post, title, featuredMediaId });
+  }
+
+  // ── Summary ──────────────────────────────────────────────────────────────
+  console.log(`\n✅  Done — ${results.length} post${results.length !== 1 ? "s" : ""} created\n`);
+
+  results.forEach(({ post, title, featuredMediaId }, i) => {
+    if (count > 1) console.log(`  ── Post ${i + 1} ──────────────────────`);
+    console.log(`     ID      : ${post.id}`);
+    console.log(`     Title   : ${post.title?.rendered || title}`);
+    console.log(`     Status  : ${post.status}`);
+    console.log(`     Link    : ${post.link}`);
+    console.log(`     Media   : ${featuredMediaId}`);
+  });
+
+  console.log();
+}
+
+run().catch((err) => {
+  console.error("\n❌  Error:", err.message);
+  process.exit(1);
+});
