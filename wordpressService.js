@@ -37,16 +37,6 @@ async function uploadMedia({
     contentType,
   });
 
-//  console.log(`🖼   Uploading ${filename}…`);
-//  console.log(`  Payload size: ${imageBuffer.length} bytes`);
-
-//  console.log(`  URL: ${url}`);
-//  console.log(`  Headers: ${JSON.stringify(form.getHeaders())}`);
-//  console.log(`  Body: ${JSON.stringify(form)}`);
-
-//  console.log(`  Username: ${username}`);
-//  console.log(`  Password: ${password}`);
-
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -89,6 +79,7 @@ async function createPost({
   title,
   content,
   status = "draft",
+  template,
   featuredMediaId,
 }) {
   const url = `${baseUrl}/wp-json/wp/v2/posts`;
@@ -98,6 +89,7 @@ async function createPost({
     content,
     status,
     featured_media: featuredMediaId,
+    ...(template !== undefined && { template }),
   };
 
   const res = await fetch(url, {

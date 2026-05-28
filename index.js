@@ -14,7 +14,7 @@ const VALID_STATUSES = ["draft", "publish", "pending", "private", "future"];
 
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const result = { count: 1, status: "draft" };
+  const result = { count: 1, status: "draft", template: undefined };
   const errors = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -43,6 +43,15 @@ function parseArgs(argv) {
         );
       } else {
         result.status = raw;
+      }
+
+    } else if (arg === "--template" || arg === "-t") {
+      const raw = args[++i];
+
+      if (!raw) {
+        errors.push("--template requires a value");
+      } else {
+        result.template = raw;
       }
 
     } else if (arg === "--help" || arg === "-h") {
@@ -74,13 +83,16 @@ Options:
   -c, --count <n>     Number of posts to create (1–100, default: 1)
   -s, --status <s>    Post status (default: draft)
                       Allowed: ${VALID_STATUSES.join(", ")}
+  -t, --template <t>  Page template to use (optional, e.g. "full-width.php")
   -h, --help          Show this help message
 
 Examples:
-  node index.js                        # create 1 draft post
-  node index.js --count 5              # create 5 draft posts
+  node index.js                                    # create 1 draft post
+  node index.js --count 5                          # create 5 draft posts
   node index.js --count 3 --status publish
   node index.js -c 10 -s pending
+  node index.js --template full-width.php
+  node index.js -c 3 -s draft -t full-width.php
 `);
 }
 
@@ -101,7 +113,7 @@ function validateConfig() {
 
 // ── Single post flow ──────────────────────────────────────────────────────────
 
-async function createOnePost({ status, index, total }) {
+async function createOnePost({ status, template, index, total }) {
   const label = total > 1 ? ` [${index}/${total}]` : "";
 
   console.log(`\n📝  Generating content and fetching image…${label}`);
@@ -121,7 +133,7 @@ async function createOnePost({ status, index, total }) {
     filename: `featured-${Date.now()}.jpg`,
   });
 
-  console.log(`📄  Creating post (status: ${status})…`);
+  console.log(`📄  Creating post (status: ${status}${template ? `, template: ${template}` : ""})…`);
   const post = await wordpressService.createPost({
     baseUrl: BASE_URL,
     username: USERNAME,
@@ -129,6 +141,7 @@ async function createOnePost({ status, index, total }) {
     title,
     content,
     status,
+    template,
     featuredMediaId,
   });
 
@@ -138,20 +151,22 @@ async function createOnePost({ status, index, total }) {
 // ── Main flow ─────────────────────────────────────────────────────────────────
 
 async function run() {
-  const { count, status } = parseArgs(process.argv);
+  const { count, status, template } = parseArgs(process.argv);
 
   validateConfig();
 
   console.log(`\n🚀  WordPress Auto-Poster`);
-  console.log(`   Target  : ${BASE_URL}`);
-  console.log(`   Posts   : ${count}`);
-  console.log(`   Status  : ${status}`);
+  console.log(`   Target   : ${BASE_URL}`);
+  console.log(`   Posts    : ${count}`);
+  console.log(`   Status   : ${status}`);
+  if (template) console.log(`   Template : ${template}`);
 
   const results = [];
 
   for (let i = 1; i <= count; i++) {
     const { post, title, featuredMediaId } = await createOnePost({
       status,
+      template,
       index: i,
       total: count,
     });
