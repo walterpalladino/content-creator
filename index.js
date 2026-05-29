@@ -127,7 +127,7 @@ function validateConfig() {
 
 // ── Single post flow ──────────────────────────────────────────────────────────
 
-async function createOnePost({ status, type, template, index, total }) {
+async function createOnePost({ status, type, template, categoryId, index, total }) {
   const label = total > 1 ? ` [${index}/${total}]` : "";
 
   console.log(`\n📝  Generating content and fetching image…${label}`);
@@ -159,6 +159,7 @@ async function createOnePost({ status, type, template, index, total }) {
     type,
     template,
     featuredMediaId,
+    categories: [categoryId],
   });
 
   return { post, title, featuredMediaId };
@@ -178,6 +179,14 @@ async function run() {
   console.log(`   Status   : ${status}`);
   if (template) console.log(`   Template : ${template}`);
 
+  // Resolve the shared category once for the whole batch
+  console.log(`\n🏷️   Resolving category…`);
+  const categoryId = await wordpressService.ensureCategory({
+    baseUrl: BASE_URL,
+    username: USERNAME,
+    password: PASSWORD,
+  });
+
   const results = [];
 
   for (let i = 1; i <= count; i++) {
@@ -185,6 +194,7 @@ async function run() {
       status,
       type,
       template,
+      categoryId,
       index: i,
       total: count,
     });
@@ -203,6 +213,7 @@ async function run() {
     console.log(`     Status  : ${post.status}`);
     console.log(`     Link    : ${post.link}`);
     console.log(`     Media   : ${featuredMediaId}`);
+    console.log(`     Category: ${categoryId}`);
   });
 
   console.log();

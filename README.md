@@ -4,11 +4,16 @@ A Node.js application that automatically generates content and creates posts or 
 
 ## How it works
 
-1. **Fetches content** from the Brett Terpstra Markdown Lipsum API — splits the first heading into the title and uses the rest as the body
-2. **Converts markdown to HTML** using the `marked` library (GFM enabled) before sending to WordPress
-3. **Fetches a random image** (600×400) from Picsum Photos
-4. **Uploads the image** to the WordPress Media Library → receives a media ID
-5. **Creates the post or page** with the generated title, HTML content, featured image ID, and any optional parameters
+Each batch run follows this sequence:
+
+1. **Resolves the category** — checks whether the `auto-posted-content` category exists; creates it if not. This happens **once per batch**, before any content is created.
+2. **Fetches content** from the Brett Terpstra Markdown Lipsum API — splits the first heading into the title and uses the rest as the body
+3. **Converts markdown to HTML** using the `marked` library (GFM enabled) before sending to WordPress
+4. **Fetches a random image** (600×400) from Picsum Photos
+5. **Uploads the image** to the WordPress Media Library → receives a media ID
+6. **Creates the post or page** with the generated title, HTML content, featured image ID, category ID, and any optional parameters
+
+Steps 2–6 repeat for each item in the batch.
 
 ## Setup
 
@@ -58,32 +63,44 @@ node index.js --help                                # show all options
 | `--template <t>` | `-t` | _(omitted)_ | Template filename (e.g. `full-width.php`). Omitted from the request entirely when not supplied |
 | `--help` | `-h` | — | Show usage information |
 
+## Auto-posting category
+
+Every item created is tagged with the `auto-posted-content` category. Before the batch starts, the application checks for this category and creates it automatically if it doesn't exist yet:
+
+| Field | Value |
+|-------|-------|
+| Name | `Auto Posted Content` |
+| Slug | `auto-posted-content` |
+| Description | `Auto Posted Content generated from external process` |
+
+The category check runs once per batch regardless of how many items are being created.
+
 ## Project structure
 
 ```
 wp-poster/
 ├── index.js            # Entry point — CLI parsing, orchestrates the full flow
 ├── contentService.js   # Fetches markdown content & random image, converts to HTML
-├── wordpressService.js # WordPress REST API calls (media upload, post/page creation)
+├── wordpressService.js # WordPress REST API calls (category, media, post/page)
 ├── .env.example        # Environment variable template
 └── package.json
 ```
 
 ## API endpoints used
 
-| Action        | Method | Endpoint                      |
-|---------------|--------|-------------------------------|
-| Upload image  | POST   | `/wp-json/wp/v2/media`        |
-| Create post   | POST   | `/wp-json/wp/v2/posts`        |
-| Create page   | POST   | `/wp-json/wp/v2/pages`        |
-
-The endpoint is selected automatically based on the `--type` flag.
+| Action                  | Method | Endpoint                                              |
+|-------------------------|--------|-------------------------------------------------------|
+| Look up category by slug | GET   | `/wp-json/wp/v2/categories?slug=auto-posted-content`  |
+| Create category         | POST   | `/wp-json/wp/v2/categories`                           |
+| Upload image            | POST   | `/wp-json/wp/v2/media`                                |
+| Create post             | POST   | `/wp-json/wp/v2/posts`                                |
+| Create page             | POST   | `/wp-json/wp/v2/pages`                                |
 
 ## Post/page payload
 
 All requests use HTTP Basic Auth (`Authorization: Basic <base64>`).
 
-The `template` field is included only when `--template` is passed. The example below shows a page with all optional fields present:
+The `template` field is included only when `--template` is passed. `categories` always contains the ID of the `auto-posted-content` category:
 
 ```json
 {
@@ -91,6 +108,7 @@ The `template` field is included only when `--template` is passed. The example b
   "content": "<p>HTML body converted from markdown…</p>",
   "status": "draft",
   "featured_media": 42,
+  "categories": [7],
   "template": "full-width.php"
 }
 ```
