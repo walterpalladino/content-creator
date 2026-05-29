@@ -9,6 +9,11 @@ function basicAuth(username, password) {
   return "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
 }
 
+const CONTENT_TYPE_ENDPOINTS = {
+  posts: "/wp-json/wp/v2/posts",
+  pages: "/wp-json/wp/v2/pages",
+};
+
 /**
  * Upload an image buffer to the WordPress media library.
  *
@@ -41,7 +46,6 @@ async function uploadMedia({
     method: "POST",
     headers: {
       Authorization: basicAuth(username, password),
-      // FormData sets Content-Type with boundary automatically via getHeaders()
       ...form.getHeaders(),
     },
     body: form,
@@ -60,7 +64,7 @@ async function uploadMedia({
 }
 
 /**
- * Create a new WordPress post.
+ * Create a new WordPress post or page.
  *
  * @param {object} opts
  * @param {string}  opts.baseUrl
@@ -68,9 +72,11 @@ async function uploadMedia({
  * @param {string}  opts.password
  * @param {string}  opts.title
  * @param {string}  opts.content
- * @param {string}  [opts.status]          - default "draft"
+ * @param {string}  [opts.status]      - default "draft"
+ * @param {string}  [opts.type]        - "posts" | "pages", default "posts"
+ * @param {string}  [opts.template]    - optional template filename
  * @param {number}  opts.featuredMediaId
- * @returns {Promise<object>} The created post object from WordPress
+ * @returns {Promise<object>} The created content object from WordPress
  */
 async function createPost({
   baseUrl,
@@ -79,10 +85,12 @@ async function createPost({
   title,
   content,
   status = "draft",
+  type = "posts",
   template,
   featuredMediaId,
 }) {
-  const url = `${baseUrl}/wp-json/wp/v2/posts`;
+  const endpoint = CONTENT_TYPE_ENDPOINTS[type];
+  const url = `${baseUrl}${endpoint}`;
 
   const payload = {
     title,
@@ -105,11 +113,12 @@ async function createPost({
 
   if (!res.ok) {
     throw new Error(
-      `Post creation failed [${res.status}]: ${JSON.stringify(data)}`
+      `${type} creation failed [${res.status}]: ${JSON.stringify(data)}`
     );
   }
 
-  console.log(`  ✔ Post created  — ID: ${data.id}  Link: ${data.link}`);
+  const label = type === "pages" ? "Page" : "Post";
+  console.log(`  ✔ ${label} created — ID: ${data.id}  Link: ${data.link}`);
   return data;
 }
 

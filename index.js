@@ -14,7 +14,7 @@ const VALID_STATUSES = ["draft", "publish", "pending", "private", "future"];
 
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const result = { count: 1, status: "draft", template: undefined };
+  const result = { count: 1, status: "draft", type: "posts", template: undefined };
   const errors = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -43,6 +43,17 @@ function parseArgs(argv) {
         );
       } else {
         result.status = raw;
+      }
+
+    } else if (arg === "--type" || arg === "-y") {
+      const raw = args[++i];
+
+      if (!raw) {
+        errors.push("--type requires a value");
+      } else if (!["posts", "pages"].includes(raw)) {
+        errors.push(`--type must be "posts" or "pages" (got: "${raw}")`);
+      } else {
+        result.type = raw;
       }
 
     } else if (arg === "--template" || arg === "-t") {
@@ -80,9 +91,10 @@ Usage:
   node index.js [options]
 
 Options:
-  -c, --count <n>     Number of posts to create (1–100, default: 1)
-  -s, --status <s>    Post status (default: draft)
+  -c, --count <n>     Number of items to create (1–100, default: 1)
+  -s, --status <s>    Post/page status (default: draft)
                       Allowed: ${VALID_STATUSES.join(", ")}
+  -y, --type <t>      Content type: posts, pages (default: posts)
   -t, --template <t>  Page template to use (optional, e.g. "full-width.php")
   -h, --help          Show this help message
 
@@ -90,6 +102,8 @@ Examples:
   node index.js                                    # create 1 draft post
   node index.js --count 5                          # create 5 draft posts
   node index.js --count 3 --status publish
+  node index.js --type pages                       # create 1 draft page
+  node index.js -y pages -c 3 -s publish
   node index.js -c 10 -s pending
   node index.js --template full-width.php
   node index.js -c 3 -s draft -t full-width.php
@@ -113,7 +127,7 @@ function validateConfig() {
 
 // ── Single post flow ──────────────────────────────────────────────────────────
 
-async function createOnePost({ status, template, index, total }) {
+async function createOnePost({ status, type, template, index, total }) {
   const label = total > 1 ? ` [${index}/${total}]` : "";
 
   console.log(`\n📝  Generating content and fetching image…${label}`);
@@ -133,7 +147,8 @@ async function createOnePost({ status, template, index, total }) {
     filename: `featured-${Date.now()}.jpg`,
   });
 
-  console.log(`📄  Creating post (status: ${status}${template ? `, template: ${template}` : ""})…`);
+  const typeLabel = type === "pages" ? "page" : "post";
+  console.log(`📄  Creating ${typeLabel} (status: ${status}${template ? `, template: ${template}` : ""})…`);
   const post = await wordpressService.createPost({
     baseUrl: BASE_URL,
     username: USERNAME,
@@ -141,6 +156,7 @@ async function createOnePost({ status, template, index, total }) {
     title,
     content,
     status,
+    type,
     template,
     featuredMediaId,
   });
@@ -151,13 +167,14 @@ async function createOnePost({ status, template, index, total }) {
 // ── Main flow ─────────────────────────────────────────────────────────────────
 
 async function run() {
-  const { count, status, template } = parseArgs(process.argv);
+  const { count, status, type, template } = parseArgs(process.argv);
 
   validateConfig();
 
   console.log(`\n🚀  WordPress Auto-Poster`);
   console.log(`   Target   : ${BASE_URL}`);
-  console.log(`   Posts    : ${count}`);
+  console.log(`   Type     : ${type}`);
+  console.log(`   Count    : ${count}`);
   console.log(`   Status   : ${status}`);
   if (template) console.log(`   Template : ${template}`);
 
@@ -166,6 +183,7 @@ async function run() {
   for (let i = 1; i <= count; i++) {
     const { post, title, featuredMediaId } = await createOnePost({
       status,
+      type,
       template,
       index: i,
       total: count,
@@ -174,10 +192,12 @@ async function run() {
   }
 
   // ── Summary ──────────────────────────────────────────────────────────────
-  console.log(`\n✅  Done — ${results.length} post${results.length !== 1 ? "s" : ""} created\n`);
+  const singular = type === "pages" ? "page" : "post";
+  const plural = type === "pages" ? "pages" : "posts";
+  console.log(`\n✅  Done — ${results.length} ${results.length !== 1 ? plural : singular} created\n`);
 
   results.forEach(({ post, title, featuredMediaId }, i) => {
-    if (count > 1) console.log(`  ── Post ${i + 1} ──────────────────────`);
+    if (count > 1) console.log(`  ── ${type === "pages" ? "Page" : "Post"} ${i + 1} ──────────────────────`);
     console.log(`     ID      : ${post.id}`);
     console.log(`     Title   : ${post.title?.rendered || title}`);
     console.log(`     Status  : ${post.status}`);
